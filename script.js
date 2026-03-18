@@ -459,7 +459,7 @@ const handleSearch = debounce((query) => {
   let box = document.getElementById("autocomplete")
   box.innerHTML = ""
 
-  // AUTOCOMPLETE (limit results)
+  // AUTOCOMPLETE (limit results) - only when typing
   if(query.length >= 2){
     let count = 0
 
@@ -484,19 +484,17 @@ const handleSearch = debounce((query) => {
   }
 
   // SEARCH RESULTS
-  let resultIDs = new Set()
+  let results
 
-  for (const key in index) {
-    if (key.startsWith(query)) {
-      index[key].forEach(id => resultIDs.add(id))
-
-      if (resultIDs.size > 100) break // limit results for performance
-    }
+  if(query) {
+    // User is actively searching
+    results = search(query)
+    results = sortResults(results, sortSelect.value, query)
+  } else {
+    // Search is empty - show all 100 items with selected sort
+    results = sortResults(movies, sortSelect.value, "")
+    results = results.slice(0, 100)
   }
-
-  let results = [...resultIDs].map(id => movies[id])
-
-  results = sortResults(results, sortSelect.value, query)
 
   render(results)
 
@@ -514,9 +512,17 @@ sortSelect.addEventListener("change",()=>{
 
 let query=searchBox.value
 
-let results = query ? search(query) : []
+let results
 
-results = sortResults(results,sortSelect.value,query)
+if(query) {
+  // If searching, use search function and ignore sort dropdown
+  results = search(query)
+  results = sortResults(results, sortSelect.value, query)
+} else {
+  // If not searching, show first 100 items with selected sort
+  results = sortResults(movies, sortSelect.value, "")
+  results = results.slice(0, 100)
+}
 
 render(results)
 
