@@ -8,8 +8,24 @@ let text = await response.text()
 parseCSV(text)
 
 buildTrie()
-buildIndex()
-render(movies)
+
+// Try to load pre-built index, otherwise build it
+try {
+  let indexResponse = await fetch("index.json")
+  if (indexResponse.ok) {
+    index = await indexResponse.json()
+  } else {
+    buildIndex()
+  }
+} catch (e) {
+  buildIndex()
+}
+
+// Don't render all movies on load - only render when searching
+let allResults = sortResults(movies, "name", "")
+render(allResults.slice(0, 100))
+
+console.log('Ready! The index has', Object.keys(index).length, 'words indexed. Showing first 100 movies...')
 
 }
 
@@ -41,8 +57,6 @@ sales: Number(cols[4]) || 0,
 year: Number(year) || 0,
 rating: Number(cols[6]) || 0
 })
-
-console.log(cols[1])
 
 })
 
@@ -82,61 +96,119 @@ let movies = [] //empty since i've got csv file
 
 
 // --------------------
-// INVERTED INDEX
+// fast prefix check
 // --------------------
+
+function getWordsWithPrefix(prefix, limit = 50){
+
+  prefix = normalizeWord(prefix)
+  if(prefix.length === 0) return []
+
+  let node = root
+
+  // walk down trie
+  for(let char of prefix){
+    if(!node.children[char]) return []
+    node = node.children[char]
+  }
+
+  let results = []
+
+  function dfs(n){
+    if(results.length >= limit) return
+
+    if(n.end && n.word){
+      results.push(n.word)
+    }
+
+    for(let c in n.children){
+      dfs(n.children[c])
+    }
+  }
+
+  dfs(node)
+
+  return results
+}
 
 let index = {}
 
+
+// debounce/throttle function to limit how often search runs while typing
+function debounce(fn, delay = 200) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), delay);
+  };
+}
 
 // --------------------
 // TRIE FOR AUTOCOMPLETE
 // --------------------
 
-class TrieNode{
-constructor(){
-this.children={}
-this.end=false
-}
+class TrieNode {
+  constructor() {
+    this.children = {}
+    this.end = false
+    this.word = null
+  }
 }
 
 let root = new TrieNode()
 
 function insert(word){
+  let node = root
 
-let node=root
+  for(let char of word){
+    if(!node.children[char]){
+      node.children[char] = new TrieNode()
+    }
+    node = node.children[char]
+  }
 
-for(let char of word){
-
-if(!node.children[char]){
-node.children[char]=new TrieNode()
-}
-
-node=node.children[char]
-}
-
-node.end=true
-
+  node.end = true
+  node.word = word
 }
 
 function buildTrie(){
 
 movies.forEach(m=>{
-insert(m.name.toLowerCase())
+let titleWords = m.name.toLowerCase().split(/\s+/)
+titleWords.forEach(word => {
+  word = normalizeWord(word)
+  if(word && word.length > 0){
+    insert(word)
+  }
+})
 })
 
+}
+
+// --------------------
+// WORD NORMALIZATION
+// --------------------
+
+function normalizeWord(word) {
+  // Remove punctuation, convert to lowercase, trim
+  return word.toLowerCase().replace(/[^\w]/g, '').trim()
 }
 
 function buildIndex(){
 
 movies.forEach((m, id)=>{
-let words = (m.name).toLowerCase().split(/\s+/)
-words.forEach(word=>{
-if(word && word.length > 0){
-if(!Array.isArray(index[word])){
-index[word] = []
-}
-index[word].push(id)
-}
+// Index ONLY title words
+let titleWords = (m.name).toLowerCase().split(/\s+/)
+titleWords.forEach(word=>{
+  word = normalizeWord(word)
+  if(word && word.length > 0){
+    if(!Array.isArray(index[word])){
+      index[word] = []
+    }
+    if(!index[word].includes(id)){
+      index[word].push(id)
+    }
+  }
 })
 })
 
@@ -144,6 +216,10 @@ index[word].push(id)
 
 
 function autocomplete(prefix){
+
+prefix = normalizeWord(prefix)
+
+if(prefix.length === 0) return []
 
 let node=root
 
@@ -183,28 +259,94 @@ return results
 
 function search(query){
 
-query=query.toLowerCase().split(" ")
+  let queryWords = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map(w => normalizeWord(w))
+    .filter(w => w.length > 0)
 
-let resultIDs = new Set()
-query.forEach(word=>{
+  if(queryWords.length === 0) return []
 
-if(index[word]){
+  let candidateIDs = new Set()
 
-index[word].forEach(id=>resultIDs.add(id))
+// STEP 1: get candidates using index + trie
+queryWords.forEach(q => {
 
-}
+  // exact match
+  if(index[q]){
+    index[q].forEach(id => candidateIDs.add(id))
+  }
+
+  // 🔥 prefix match via trie (fast)
+  let words = getWordsWithPrefix(q, 50) // capped
+
+  words.forEach(word => {
+    if(index[word]){
+      index[word].forEach(id => candidateIDs.add(id))
+    }
+  })
 
 })
 
-return [...resultIDs].map(id=>movies[id])
+  // fallback if nothing found
+  if(candidateIDs.size === 0){
+    return []
+  }
 
+  // STEP 2: score only candidates (NOT all movies)
+  let scored = []
+
+  candidateIDs.forEach(id => {
+
+    let movie = movies[id]
+    let name = movie.name.toLowerCase()
+    let nameWords = name.split(/\s+/)
+
+    let score = 0
+
+    queryWords.forEach(q => {
+      for(let w of nameWords){
+        if(w === q) score += 100
+        else if(w.startsWith(q)) score += 60
+        else if(w.includes(q)) score += 30
+      }
+    })
+
+    if(score > 0){
+      scored.push({ movie, score })
+    }
+
+  })
+
+  return scored
+    .sort((a,b) => b.score - a.score)
+    .map(x => x.movie)
 }
 
 
+// Levenshtein algorithm for more error tolerance
+function levenshtein(a, b){
+  const matrix = Array.from({ length: a.length + 1 }, () =>
+    Array(b.length + 1).fill(0)
+  )
 
-// --------------------
-// SORTING
-// --------------------
+  for(let i = 0; i <= a.length; i++) matrix[i][0] = i
+  for(let j = 0; j <= b.length; j++) matrix[0][j] = j
+
+  for(let i = 1; i <= a.length; i++){
+    for(let j = 1; j <= b.length; j++){
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      )
+    }
+  }
+
+  return matrix[a.length][b.length]
+}
 
 // --------------------
 // RELEVANCE SCORING
@@ -212,23 +354,30 @@ return [...resultIDs].map(id=>movies[id])
 
 function calculateRelevance(movieName, query){
 const name = movieName.toLowerCase()
-const q = query.toLowerCase()
+const queryWords = query.toLowerCase().split(/\s+/).map(w => normalizeWord(w)).filter(w => w.length > 0)
 
-// Exact match
-if(name === q) return 1000
+let totalScore = 0
 
-// Starts with query
-if(name.startsWith(q)) return 500
+// Check each word in the query against ONLY the title
+queryWords.forEach(q => {
+  // Normalize query word
+  q = normalizeWord(q)
+  
+  // Exact match in title
+  if(name === q) totalScore += 10000
+  // Starts with query in title
+  else if(name.startsWith(q)) totalScore += 5000
+  else {
+    // Word boundary match in title
+    const nameWords = name.split(/\s+/)
+    if(nameWords.some(w => w === q)) totalScore += 4000
+    else if(nameWords.some(w => w.startsWith(q))) totalScore += 3000
+    // Contains query in title
+    else if(name.includes(q)) totalScore += 2000
+  }
+})
 
-// Word boundary match
-const words = name.split(/\s+/)
-if(words.some(w => w === q)) return 400
-if(words.some(w => w.startsWith(q))) return 300
-
-// Contains query
-if(name.includes(q)) return 200
-
-return 0
+return totalScore
 }
 
 function sortResults(list,type,query=""){
@@ -273,9 +422,7 @@ let table=document.getElementById("results")
 
 table.innerHTML=""
 
-
-
-list.slice(0,100).forEach(m=>{
+list.forEach(m=>{
 
 if (m.overview.length<3) {
     m.overview="Nav pieejams apraksts."
@@ -307,43 +454,59 @@ table.innerHTML+=row
 let searchBox=document.getElementById("search")
 let sortSelect=document.getElementById("sort")
 
-searchBox.addEventListener("input",()=>{
+const handleSearch = debounce((query) => {
 
-let query=searchBox.value
+  let box = document.getElementById("autocomplete")
+  box.innerHTML = ""
 
-let box=document.getElementById("autocomplete")
+  // AUTOCOMPLETE (limit results)
+  if(query.length >= 2){
+    let count = 0
 
-box.innerHTML=""
+    for (const key in index) {
+      if (key.startsWith(query)) {
 
-// Only show autocomplete suggestions if at least 2 characters are typed
-if(query.length >= 2){
+        let div = document.createElement("div")
+        div.className = "suggestion"
+        div.textContent = key
 
-let suggestions = autocomplete(query.toLowerCase())
+        div.onclick = () => {
+          searchBox.value = key
+          box.innerHTML = ""
+        }
 
-suggestions.forEach(s=>{
+        box.appendChild(div)
 
-let div=document.createElement("div")
-div.className="suggestion"
-div.textContent=s
+        count++
+        if (count >= 5) break // limit autofill
+      }
+    }
+  }
 
-div.onclick=()=>{
-searchBox.value=s
-box.innerHTML=""
-}
+  // SEARCH RESULTS
+  let resultIDs = new Set()
 
-box.appendChild(div)
+  for (const key in index) {
+    if (key.startsWith(query)) {
+      index[key].forEach(id => resultIDs.add(id))
 
+      if (resultIDs.size > 100) break // limit results for performance
+    }
+  }
+
+  let results = [...resultIDs].map(id => movies[id])
+
+  results = sortResults(results, sortSelect.value, query)
+
+  render(results)
+
+}, 200)
+
+searchBox.addEventListener("input", () => {
+  handleSearch(searchBox.value.toLowerCase())
 })
 
-}
 
-let results = query ? search(query) : movies
-
-results = sortResults(results,sortSelect.value,query)
-
-render(results)
-
-})
 
 
 
@@ -351,7 +514,7 @@ sortSelect.addEventListener("change",()=>{
 
 let query=searchBox.value
 
-let results = query ? search(query) : movies
+let results = query ? search(query) : []
 
 results = sortResults(results,sortSelect.value,query)
 
