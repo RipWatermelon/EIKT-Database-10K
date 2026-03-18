@@ -37,7 +37,7 @@ name: cols[0],
 overview: cols[1],
 author: cols[2],
 sales: Number(cols[4]) || 0,
-age: cols[5],
+
 year: Number(year) || 0,
 rating: Number(cols[6]) || 0
 })
@@ -206,7 +206,41 @@ return [...resultIDs].map(id=>movies[id])
 // SORTING
 // --------------------
 
-function sortResults(list,type){
+// --------------------
+// RELEVANCE SCORING
+// --------------------
+
+function calculateRelevance(movieName, query){
+const name = movieName.toLowerCase()
+const q = query.toLowerCase()
+
+// Exact match
+if(name === q) return 1000
+
+// Starts with query
+if(name.startsWith(q)) return 500
+
+// Word boundary match
+const words = name.split(/\s+/)
+if(words.some(w => w === q)) return 400
+if(words.some(w => w.startsWith(q))) return 300
+
+// Contains query
+if(name.includes(q)) return 200
+
+return 0
+}
+
+function sortResults(list,type,query=""){
+
+// If there's a search query, sort by relevance
+if(query.length > 0){
+return list.sort((a,b)=>{
+const scoreA = calculateRelevance(a.name, query)
+const scoreB = calculateRelevance(b.name, query)
+return scoreB - scoreA
+})
+}
 
 if(type==="name"){
 return list.sort((a,b)=>a.name.localeCompare(b.name))
@@ -239,7 +273,13 @@ let table=document.getElementById("results")
 
 table.innerHTML=""
 
+
+
 list.slice(0,100).forEach(m=>{
+
+if (m.overview.length<3) {
+    m.overview="Nav pieejams apraksts."
+}
 
 let row=`
 <tr>
@@ -247,7 +287,6 @@ let row=`
 <td>${m.overview}</td>
 <td>${m.author}</td>
 <td>${m.sales}</td>
-<td>${m.age}</td>
 <td>${m.year}</td>
 <td>${m.rating}</td>
 </tr>
@@ -272,11 +311,14 @@ searchBox.addEventListener("input",()=>{
 
 let query=searchBox.value
 
-let suggestions = autocomplete(query.toLowerCase())
-
 let box=document.getElementById("autocomplete")
 
 box.innerHTML=""
+
+// Only show autocomplete suggestions if at least 2 characters are typed
+if(query.length >= 2){
+
+let suggestions = autocomplete(query.toLowerCase())
 
 suggestions.forEach(s=>{
 
@@ -293,10 +335,11 @@ box.appendChild(div)
 
 })
 
+}
 
 let results = query ? search(query) : movies
 
-results = sortResults(results,sortSelect.value)
+results = sortResults(results,sortSelect.value,query)
 
 render(results)
 
@@ -310,7 +353,7 @@ let query=searchBox.value
 
 let results = query ? search(query) : movies
 
-results = sortResults(results,sortSelect.value)
+results = sortResults(results,sortSelect.value,query)
 
 render(results)
 

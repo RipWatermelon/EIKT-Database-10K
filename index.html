@@ -1,83 +1,200 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Movie Database</title>
+<title>Filmas meklētājs</title>
 
 <style>
+/* ====================================================
+Stolen email field from https://codepen.io/PRtheRose/pen/BNgEJo
+==================================================== */
+
+/* reset */
+html { box-sizing: border-box; font-size: 10px; }
+*, *:before, *:after { box-sizing: inherit; }
+body, ul, li  { margin: 0; padding: 0; }
+li { list-style: none; }
+p, h1, h2, h3, h4, h5, h6 { margin-top: 0; }
+a { text-decoration: none; }
+input { border-style: none; background: transparent; outline: none; }
+button { padding: 0; background: none; border: none; outline: none; }
+
+/* page styles */
 body {
-    font-family: Arial;
-    background:#111;
-    color:white;
-    padding:20px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: radial-gradient(circle at 0% 0%, #373b52, #252736 51%, #1d1e26);
+  color: white;
+  padding: 20px;
 }
 
-h1{
-    text-align:center;
+/* demo */
+h1.demo {
+  text-align: center;
+  font-size: 2.4rem;
+  font-weight: normal;
+  margin-bottom: 1rem;
+  color: #f5f6ff;
 }
 
-input, select{
-    padding:8px;
-    margin:5px;
+a.demo {
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: normal;
+  color: rgba(202, 205, 239, 0.8);
+  margin-bottom: 3rem;
 }
 
-#autocomplete{
-    background:#222;
-    border:1px solid #555;
-    max-width:400px;
+.demo-flex-spacer {
+  flex-grow: 1;
 }
 
-.suggestion{
-    padding:6px;
-    cursor:pointer;
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 1600px;
+  padding: 0 15px;
+  margin: 0 auto;
 }
 
-.suggestion:hover{
-    background:#444;
+/* gradient animation */
+@keyframes gradient { 
+  0% { background-position: 0 0; }
+  100% { background-position: 100% 0; }
 }
 
-table{
-    width:100%;
-    border-collapse:collapse;
-    margin-top:20px;
+/* main input */
+.webflow-style-input {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  border-radius: 2px;
+  padding: 1.4rem 2rem 1.6rem;
+  background: rgba(57, 63, 84, 0.8);
 }
 
-th,td{
-    border:1px solid #444;
-    padding:8px;
-    text-align:left;
+.webflow-style-input::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  height: 2px;
+  border-bottom-left-radius: 2px;
+  border-bottom-right-radius: 2px;
+  background: linear-gradient(to right, #B294FF, #57E6E6, #FEFFB8, #57E6E6, #B294FF, #57E6E6);
+  background-size: 500% auto;
+  background-position: 0% 0%;
+  animation: gradient 3s linear infinite;
 }
 
-th{
-    background:#222;
+.webflow-style-input input {
+  flex-grow: 1;
+  color: #BFD2FF;
+  font-size: 1.8rem;
+  line-height: 2.4rem;
+  vertical-align: middle;
 }
+
+.webflow-style-input input::placeholder {
+  color: #7881A1;
+}
+
+.webflow-style-input button {
+  color: #7881A1;
+  font-size: 2.4rem;
+  line-height: 2.4rem;
+  vertical-align: middle;
+  transition: color 0.25s;
+}
+
+.webflow-style-input button:hover {
+  color: #BFD2FF;
+}
+
+h1 {
+  text-align: center;
+}
+
+select {
+  padding: 8px;
+  margin: 5px;
+  background: rgba(57, 63, 84, 0.8);
+  color: #BFD2FF;
+  border: 1px solid #7881A1;
+  border-radius: 2px;
+}
+
+#autocomplete {
+  background: rgba(57, 63, 84, 0.8);
+  border: 1px solid #7881A1;
+  max-width: 400px;
+  margin: 0 auto;
+  margin-top: 5px;
+}
+
+.suggestion {
+  padding: 6px;
+  cursor: pointer;
+  color: #BFD2FF;
+}
+
+.suggestion:hover {
+  background: rgba(88, 93, 114, 0.8);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+th, td {
+  border: 1px solid #9494c2;
+  padding: 8px;
+  text-align: left;
+}
+
+th {
+  background: rgba(88, 93, 114, 0.8);
+  color: #BFD2FF;
+}
+
 </style>
 
 </head>
 
 <body>
 
-<h1>Movie Database</h1>
+<h1>Filmu datubāze</h1>
 
-<input id="search" placeholder="Search movies...">
+<div class="webflow-style-input">
+  <input id="search" placeholder="Meklēt...">
+</div>
+
 <div id="autocomplete"></div>
 
 <select id="sort">
-<option value="name">Sort by Name</option>
-<option value="sales">Sort by Sales</option>
-<option value="year">Sort by Release Year</option>
-<option value="rating">Sort by Rating</option>
+<option value="name">Kārtot pēc Nosaukuma</option>
+<option value="sales">Kārtot pēc Profita</option>
+<option value="year">Kārtot pēc Izdošanas Gada</option>
+<option value="rating">Kārtot pēc Atsauksmēm</option>
 </select>
 
 <table>
 <thead>
 <tr>
 <th>Nosaukums</th>
-<th>Overview</th>
-<th>Autors</th>
-<th>Sales ($)</th>
-<th>Age Rating</th>
-<th>Release Year</th>
-<th>Rating</th>
+<th>Apraksts</th>
+<th>Valoda</th>
+<th>Profits (USD, miljoni)</th>
+<th>Izdošanas gads</th>
+<th>Atsauksmes</th>
 </tr>
 </thead>
 
