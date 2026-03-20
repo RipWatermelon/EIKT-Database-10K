@@ -115,7 +115,7 @@ function buildTrie() {
 function dfs(n, results, limit) {
     if (results.length >= limit) return
     if (n.end && n.word) results.push(n.word)
-    for (let c in n.children) dfs(n.children[c])
+    for (let c in n.children) dfs(n.children[c], results, limit)
   }
 
 function getWordsWithPrefix(prefix, limit = CANDIDATE_PREFIX_LIMIT) {
