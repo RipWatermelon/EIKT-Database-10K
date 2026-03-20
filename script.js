@@ -40,9 +40,9 @@ function parseCSV(data) {
       name: cols[0],
       overview: cols[1],
       author: cols[2],
-      sales: Number(cols[4]) || 0,
-      year: Number(year) || 0,
-      rating: Number(cols[6]) || 0
+      sales: Number(cols[4]),
+      year: Number(year),
+      rating: Number(cols[6])
     })
   })
 }
@@ -112,6 +112,12 @@ function buildTrie() {
   })
 }
 
+function dfs(n, results, limit) {
+    if (results.length >= limit) return
+    if (n.end && n.word) results.push(n.word)
+    for (let c in n.children) dfs(n.children[c])
+  }
+
 function getWordsWithPrefix(prefix, limit = CANDIDATE_PREFIX_LIMIT) {
   prefix = normalizeWord(prefix)
   if (prefix.length === 0) return []
@@ -124,13 +130,7 @@ function getWordsWithPrefix(prefix, limit = CANDIDATE_PREFIX_LIMIT) {
 
   let results = []
 
-  function dfs(n) {
-    if (results.length >= limit) return
-    if (n.end && n.word) results.push(n.word)
-    for (let c in n.children) dfs(n.children[c])
-  }
-
-  dfs(node)
+  dfs(node, results, limit)
   return results
 }
 
@@ -256,10 +256,22 @@ function search(query) {
 // sort
 // --------------------
 
+function filterByRating(list, ratingFilter) {
+  if (!ratingFilter) return list
+
+  let [min, max] = ratingFilter.split("-").map(Number)
+
+  return list.filter(m => {
+    if (Number.isNaN(m.rating)) return false
+    if (max === 10) return m.rating >= min && m.rating <= max
+    return m.rating >= min && m.rating < max
+  })
+}
+
 function sortResults(list, type, query = "") {
   // when there's an active query, search() already returns results ranked
-  // by relevance — don't re-sort by name/year/etc. unless the user has
-  // explicitly changed the sort dropdown while searching.
+  // by relevance, don't re-sort by name/year/etc. unless the user has
+  // changed the sort dropdown while searching
   if (type === "relevance" || (query.length > 0 && type === "name")) {
     return list // preserve search ranking
   }
@@ -315,6 +327,7 @@ function debounce(fn, delay = 200) {
 
 let searchBox  = document.getElementById("search")
 let sortSelect = document.getElementById("sort")
+let ratingSelect = document.getElementById("ratingFilter")
 
 const handleSearch = debounce((query) => {
   let box = document.getElementById("autocomplete")
@@ -338,12 +351,16 @@ const handleSearch = debounce((query) => {
     })
   }
 
+  let ratingFilter = ratingSelect.value
   let results
+
   if (query) {
     results = search(query)
+    results = filterByRating(results, ratingFilter)
     results = sortResults(results, sortSelect.value, query)
   } else {
-    results = sortResults([...movies], sortSelect.value, "")
+    results = filterByRating([...movies], ratingFilter)
+    results = sortResults(results, sortSelect.value, "")
     results = results.slice(0, 100)
   }
 
@@ -355,16 +372,9 @@ searchBox.addEventListener("input", () => {
 })
 
 sortSelect.addEventListener("change", () => {
-  let query = searchBox.value.toLowerCase()
-  let results
+  handleSearch(searchBox.value.toLowerCase())
+})
 
-  if (query) {
-    results = search(query)
-    results = sortResults(results, sortSelect.value, query)
-  } else {
-    results = sortResults([...movies], sortSelect.value, "")
-    results = results.slice(0, 100)
-  }
-
-  render(results)
+ratingSelect.addEventListener("change", () => {
+  handleSearch(searchBox.value.toLowerCase())
 })
