@@ -1,27 +1,27 @@
-// --------------------
+ 
 // settings
-// --------------------
+ 
 
 const AUTOCOMPLETE_LIMIT = 5 // how many autocompletes will be sohwn
 const CANDIDATE_PREFIX_LIMIT = 50 // check up to 50 matching words max (then we do fuzzy search)
 const FUZZY_DISTANCE_THRESHOLD = 2 // max edits/mistakes allowed for search to be returned (jhn -> john is 1 edit, jhnn -> john is 2 edits))
 
-// --------------------
+ 
 // CSV LOADING
-// --------------------
+ 
 
 async function loadCSV() {
-  let response = await fetch("movies.csv")
+  let response = await fetch("movies_enriched.csv")
   let text = await response.text()
 
   parseCSV(text)
   buildTrie()
   buildIndex() // rebuilds index.json every time in case movies.csv changes
 
-  let allResults = sortResults([...movies], "name", "")
+  let allResults = sortResults([...movies], "name", "", "asc")
   render(allResults.slice(0, 100))
 
-  console.log('Ready!', movies.length, 'movies loaded,', Object.keys(index).length, 'words indexed.')
+  console.log(movies.length, 'movies loaded and', Object.keys(index).length, 'words indexed')
 }
 
 loadCSV()
@@ -34,20 +34,57 @@ function parseCSV(data) {
     let cols = parseCSVLine(line)
     if (cols.length < 7) return
 
-    let year = cols[3] ? cols[3].split("-")[0] : ""
-
+// id,title,overview,rel_date,popularity,vote_average,ticket_price,genre,movie_studio,availability,db_entry_date
     movies.push({
-      name: cols[0],
-      overview: cols[1],
-      author: cols[2],
-      sales: Number(cols[4]),
-      year: Number(year),
-      rating: Number(cols[6])
+      name: cols[1],
+      overview: cols[2],
+      rel_date: parseDate(cols[3]),
+      // ignore popularity
+      rating: Number(cols[5]),
+      ticket_price: parsePrice(cols[6]),
+      genre: cols[7],
+      movie_studio: cols[8],
+      availability: parseBoolean(cols[9]),
+      db_entry_date: parseDate(cols[10]),
     })
   })
 }
 
-function parseCSVLine(line) {
+function parseDate(value) {
+  if (!value) return null
+  let date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function parsePrice(value) {
+  if (!value) return NaN
+  let cleaned = value.replace(/[^0-9.,-]/g, "").replace(",", ".")
+  return Number(cleaned)
+}
+
+function parseBoolean(value) {
+  if (!value) return false
+  let normalized = value.toString().trim().toLowerCase()
+  return (
+    normalized === "yes" //makes "yes" turn into "jā"
+  )
+}
+
+function formatDate(value) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return "-"
+  return value.toLocaleDateString("en-en")
+}
+
+function formatPrice(value) {
+  if (Number.isNaN(value)) return "-"
+  return new Intl.NumberFormat("lv-LV", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+  }).format(value)
+}
+
+function parseCSVLine(line) { 
   let cols = []
   let current = ""
   let insideQuotes = false
@@ -57,7 +94,7 @@ function parseCSVLine(line) {
 
     if (char === '"') {
       insideQuotes = !insideQuotes
-    } else if (char === "," && !insideQuotes) {
+    } else if (char === "," && !insideQuotes) { //handles commas inside of quotes "they didn't know, that..."
       cols.push(current.trim())
       current = ""
     } else {
@@ -71,17 +108,16 @@ function parseCSVLine(line) {
 
 let movies = []
 
-// --------------------
-// word normalization
-// --------------------
+ 
+// remove caps and punctuation using regex
 
 function normalizeWord(word) {
   return word.toLowerCase().replace(/[^\w]/g, '').trim()
 }
 
-// --------------------
-// trie
-// --------------------
+ 
+// trie algorithm
+ 
 
 class TrieNode {
   constructor() {
@@ -134,16 +170,16 @@ function getWordsWithPrefix(prefix, limit = CANDIDATE_PREFIX_LIMIT) {
   return results
 }
 
-// --------------------
+ 
 // index
-// --------------------
+ 
 
 let index = {}
 
 function buildIndex() {
-  index = {} // reset so no problems with index.json being old
+  index = {} // reset before building it
   movies.forEach((m, id) => {
-    m.name.toLowerCase().split(/\s+/).forEach(word => {
+    m.name.toLowerCase().split(/\s+/).forEach(word => { //makes search case insensitive
       word = normalizeWord(word)
       if (word.length === 0) return
       if (!index[word]) index[word] = []
@@ -152,9 +188,9 @@ function buildIndex() {
   })
 }
 
-// --------------------
-// fuzzy search (https://www.codementor.io/@anwarulislam/how-to-implement-fuzzy-search-in-javascript-2742dqz1p9)
-// --------------------
+ 
+// fuzzy search for error tolerance (https://www.codementor.io/@anwarulislam/how-to-implement-fuzzy-search-in-javascript-2742dqz1p9)
+ 
 
 function levenshtein(a, b) {
   const matrix = Array.from({ length: a.length + 1 }, () =>
@@ -181,16 +217,16 @@ function levenshtein(a, b) {
 function getFuzzyWords(queryWord, threshold = FUZZY_DISTANCE_THRESHOLD) {
   let matches = []
   for (let word in index) {
-    // skip words that are way longer than the search
+    // skip words that are longer than the search
     if (Math.abs(word.length - queryWord.length) > threshold) continue
     if (levenshtein(queryWord, word) <= threshold) matches.push(word)
   }
   return matches
 }
 
-// --------------------
+ 
 // search
-// --------------------
+ 
 
 function search(query) {
   let queryWords = query
@@ -204,15 +240,15 @@ function search(query) {
   let candidateIDs = new Set()
 
   queryWords.forEach(q => {
-    // 1. exact match
+    // exact match
     if (index[q]) index[q].forEach(id => candidateIDs.add(id))
 
-    // 2. prefix match with trie
+    // match using prefix (autocomplete)
     getWordsWithPrefix(q, CANDIDATE_PREFIX_LIMIT).forEach(word => {
       if (index[word]) index[word].forEach(id => candidateIDs.add(id))
     })
 
-    // 3. fuzzy match (only if 1 and 2 gave up)
+    // fuzzy match (error tolerance)
     if (candidateIDs.size === 0 && q.length >= 3) {
       getFuzzyWords(q).forEach(word => {
         if (index[word]) index[word].forEach(id => candidateIDs.add(id))
@@ -236,7 +272,7 @@ function search(query) {
         else if (w.startsWith(q)) score += 60
         else if (w.includes(q))   score += 30
         else {
-          // give priority to fuzzy matched searches
+          // give priority to fuzzy matched searches (error tolerance)
           let dist = levenshtein(q, w)
           if (dist === 1) score += 20
           else if (dist === 2) score += 10
@@ -252,9 +288,9 @@ function search(query) {
     .map(x => x.movie)
 }
 
-// --------------------
+ 
 // sort
-// --------------------
+ 
 
 function filterByRating(list, ratingFilter) {
   if (!ratingFilter) return list
@@ -268,23 +304,22 @@ function filterByRating(list, ratingFilter) {
   })
 }
 
-function sortResults(list, type, query = "") {
-  // when there's an active query, search() already returns results ranked
-  // by relevance, don't re-sort by name/year/etc. unless the user has
-  // changed the sort dropdown while searching
+function sortResults(list, type, query = "", order = "asc") {
+  let direction = order === "desc" ? -1 : 1
+
+  // defalt to sorting by relevance unless user has picked smth else
   if (type === "relevance" || (query.length > 0 && type === "name")) {
-    return list // preserve search ranking
+    if (order === "desc") return [...list].reverse() //if user picked descending, reverse the order
+    return list // returns everything as is
   }
-  if (type === "sales")  return list.sort((a, b) => b.sales - a.sales)
-  if (type === "year")   return list.sort((a, b) => b.year - a.year)
-  if (type === "rating") return list.sort((a, b) => b.rating - a.rating)
-  if (type === "name")   return list.sort((a, b) => a.name.localeCompare(b.name))
+  if (type === "price")  return list.sort((a, b) => (a.ticket_price - b.ticket_price) * direction)
+  if (type === "year")   return list.sort((a, b) => (a.rel_date - b.rel_date) * direction)
+  if (type === "rating") return list.sort((a, b) => (a.rating - b.rating) * direction)
+  if (type === "name")   return list.sort((a, b) => a.name.localeCompare(b.name) * direction)
   return list
 }
 
-// --------------------
-// render
-// --------------------
+// RENDER
 
 function render(list) {
   let table = document.getElementById("results")
@@ -293,25 +328,28 @@ function render(list) {
   list.forEach(m => {
     let overview = m.overview && m.overview.length >= 3
       ? m.overview
-      : "Nav pieejams apraksts." // makes it prettier for the end user
+      : "Nav pieejams apraksts."
 
     let row = `
       <tr>
         <td>${m.name}</td>
-        <td>${overview}</td>
-        <td>${m.author}</td>
-        <td>${m.sales}</td>
-        <td>${m.year}</td>
+        <td>${m.overview}</td>
+        <td>${formatDate(m.rel_date)}</td>
         <td>${m.rating}</td>
+        <td>${formatPrice(m.ticket_price)}</td>
+        <td>${m.genre}</td>
+        <td>${m.movie_studio}</td>
+        <td>${m.availability ? "jā" : "nē"}</td>
+        <td>${formatDate(m.db_entry_date)}</td>
       </tr>`
 
     table.innerHTML += row
   })
 }
 
-// --------------------
-// delay (no more lag)
-// --------------------
+ 
+// delay for optimization (200 ms)
+ 
 
 function debounce(fn, delay = 200) {
   let timeout
@@ -321,13 +359,18 @@ function debounce(fn, delay = 200) {
   }
 }
 
-// --------------------
+ 
 // events
-// --------------------
+ 
 
 let searchBox  = document.getElementById("search")
 let sortSelect = document.getElementById("sort")
+let sortOrderSelect = document.getElementById("sort-order")
 let ratingSelect = document.getElementById("ratingFilter")
+
+function getSortOrder() { //checks if user picked asc or desc (default = asc)
+  return sortOrderSelect.dataset.order === "desc" ? "desc" : "asc"
+}
 
 const handleSearch = debounce((query) => {
   let box = document.getElementById("autocomplete")
@@ -354,27 +397,36 @@ const handleSearch = debounce((query) => {
   let ratingFilter = ratingSelect.value
   let results
 
-  if (query) {
+  if (query) { // if there is search text, search and then sort
     results = search(query)
     results = filterByRating(results, ratingFilter)
-    results = sortResults(results, sortSelect.value, query)
+    results = sortResults(results, sortSelect.value, query, getSortOrder())
   } else {
     results = filterByRating([...movies], ratingFilter)
-    results = sortResults(results, sortSelect.value, "")
+    results = sortResults(results, sortSelect.value, "", getSortOrder())
     results = results.slice(0, 100)
   }
 
   render(results)
 }, 200)
 
-searchBox.addEventListener("input", () => {
+//event listeners
+
+searchBox.addEventListener("input", () => { //listen for search input
   handleSearch(searchBox.value.toLowerCase())
 })
 
-sortSelect.addEventListener("change", () => {
+sortSelect.addEventListener("change", () => { //listen for sort type change
   handleSearch(searchBox.value.toLowerCase())
 })
 
-ratingSelect.addEventListener("change", () => {
+sortOrderSelect.addEventListener("click", () => { //listen for toggle
+  let nextOrder = getSortOrder() === "asc" ? "desc" : "asc"
+  sortOrderSelect.dataset.order = nextOrder
+  sortOrderSelect.textContent = nextOrder === "asc" ? "Augošā secībā" : "Dilstošā secībā"
+  handleSearch(searchBox.value.toLowerCase())
+})
+
+ratingSelect.addEventListener("change", () => { //listen for rating filter change
   handleSearch(searchBox.value.toLowerCase())
 })

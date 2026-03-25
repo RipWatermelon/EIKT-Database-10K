@@ -124,10 +124,21 @@ h1 {
 select {
   padding: 8px;
   margin: 5px;
+  margin-top:15px;
   background: rgba(57, 63, 84, 0.8);
   color: #BFD2FF;
   border: 1px solid #7881A1;
   border-radius: 2px;
+}
+
+#sort-order {
+  padding: 8px;
+  margin: 5px;
+  background: rgba(57, 63, 84, 0.8);
+  color: #BFD2FF;
+  border: 1px solid #7881A1;
+  border-radius: 2px;
+  cursor: pointer;
 }
 
 #autocomplete {
@@ -181,10 +192,14 @@ th {
 
 <select id="sort">
 <option value="name">Kārtot pēc Nosaukuma</option>
-<option value="sales">Kārtot pēc Profita</option>
+<option value="price">Kārtot pēc Biļetes cenas</option>
 <option value="year">Kārtot pēc Izdošanas Gada</option>
 <option value="rating">Kārtot pēc Atsauksmēm</option>
 </select>
+
+<button id="sort-order" type="button" data-order="asc" aria-label="Kārtošanas secība">
+  Augošā secībā
+</button>
 
 <select id="ratingFilter">
 <option value="">Visas Atsauksmes</option>
@@ -200,10 +215,13 @@ th {
 <tr>
 <th>Nosaukums</th>
 <th>Apraksts</th>
-<th>Valoda</th>
-<th>Profits (USD, miljoni)</th>
-<th>Izdošanas gads</th>
+<th>Izdošanas datums</th>
 <th>Atsauksmes</th>
+<th>Biļetes cena</th>
+<th>Žanrs</th>
+<th>Filma studija</th>
+<th>Pieejams</th>
+<th>Datubāzes ievietošanas datums</th>
 </tr>
 </thead>
 
