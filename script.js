@@ -17,6 +17,7 @@ async function loadCSV() {
   parseCSV(text)
   buildTrie()
   buildIndex() // rebuilds index.json every time in case movies.csv changes
+  populateStudioFilter()
 
   let allResults = sortResults([...movies], "name", "", "asc")
   render(allResults.slice(0, 100))
@@ -303,6 +304,33 @@ function filterByRating(list, ratingFilter) {
     return m.rating >= min && m.rating < max
   })
 }
+// filter by movie studio
+function filterByStudio(list, studioFilter) {
+  if (!studioFilter) return list
+  return list.filter(m => m.movie_studio === studioFilter)
+}
+
+function filterByAvailability(list, availableOnly) {
+  if (!availableOnly) return list
+  return list.filter(m => m.availability)
+}
+// fill the movie studio filter box with values
+function populateStudioFilter() {
+  let studioSelect = document.getElementById("studioFilter")
+  if (!studioSelect) return
+
+  let studios = [...new Set(movies
+    .map(m => (m.movie_studio || "").trim())
+    .filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b))
+
+  studios.forEach(studio => {
+    let option = document.createElement("option")
+    option.value = studio
+    option.textContent = studio
+    studioSelect.appendChild(option)
+  })
+}
 
 function sortResults(list, type, query = "", order = "asc") {
   let direction = order === "desc" ? -1 : 1
@@ -348,18 +376,9 @@ function render(list) {
 }
 
  
-// delay for optimization (200 ms)
+// delay for optimization (2000 ms)
  
 
-function debounce(fn, delay = 200) {
-  let timeout
-  return (...args) => {
-    clearTimeout(timeout)
-    timeout = setTimeout(() => fn(...args), delay)
-  }
-}
-
- 
 // events
  
 
@@ -367,12 +386,14 @@ let searchBox  = document.getElementById("search")
 let sortSelect = document.getElementById("sort")
 let sortOrderSelect = document.getElementById("sort-order")
 let ratingSelect = document.getElementById("ratingFilter")
+let studioSelect = document.getElementById("studioFilter")
+let availableOnlyCheckbox = document.getElementById("availableOnly")
 
 function getSortOrder() { //checks if user picked asc or desc (default = asc)
   return sortOrderSelect.dataset.order === "desc" ? "desc" : "asc"
 }
 
-const handleSearch = debounce((query) => {
+function updateAutocomplete(query) {
   let box = document.getElementById("autocomplete")
   box.innerHTML = ""
 
@@ -393,27 +414,44 @@ const handleSearch = debounce((query) => {
       box.appendChild(div)
     })
   }
+}
+
+function handleSearch(query) {
+  updateAutocomplete(query)
 
   let ratingFilter = ratingSelect.value
+  let studioFilter = studioSelect.value
+  let availableOnly = availableOnlyCheckbox.checked
   let results
 
   if (query) { // if there is search text, search and then sort
     results = search(query)
     results = filterByRating(results, ratingFilter)
+    results = filterByStudio(results, studioFilter)
+    results = filterByAvailability(results, availableOnly)
     results = sortResults(results, sortSelect.value, query, getSortOrder())
   } else {
     results = filterByRating([...movies], ratingFilter)
+    results = filterByStudio(results, studioFilter)
+    results = filterByAvailability(results, availableOnly)
     results = sortResults(results, sortSelect.value, "", getSortOrder())
     results = results.slice(0, 100)
   }
 
   render(results)
-}, 200)
+}
 
 //event listeners
 
-searchBox.addEventListener("input", () => { //listen for search input
-  handleSearch(searchBox.value.toLowerCase())
+searchBox.addEventListener("input", () => { //only update autocomplete while typing
+  updateAutocomplete(searchBox.value.toLowerCase())
+})
+
+searchBox.addEventListener("keydown", (event) => { //run search when Enter is pressed
+  if (event.key === "Enter") {
+    event.preventDefault()
+    handleSearch(searchBox.value.toLowerCase())
+  }
 })
 
 sortSelect.addEventListener("change", () => { //listen for sort type change
@@ -428,5 +466,13 @@ sortOrderSelect.addEventListener("click", () => { //listen for toggle
 })
 
 ratingSelect.addEventListener("change", () => { //listen for rating filter change
+  handleSearch(searchBox.value.toLowerCase())
+})
+
+studioSelect.addEventListener("change", () => { //listen for studio filter change
+  handleSearch(searchBox.value.toLowerCase())
+})
+
+availableOnlyCheckbox.addEventListener("change", () => { //listen for availability filter change
   handleSearch(searchBox.value.toLowerCase())
 })
